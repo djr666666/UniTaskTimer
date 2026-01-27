@@ -6,3 +6,6 @@
 ### Loop()  无线循环（增加停止无线循环功能）
 ### RemoveTimer()  移除计时器
 ### GetTimer()  获取计时器
+### Start()  平滑处理 (技能冷却效果,对象渐变效果)
+### PauseTimer()  暂停
+### ContinueTimer()  继续
