@@ -84,7 +84,147 @@ public class TimerHandle : UITaskTimer
         }
     }
 
+           /// <summary>
+           /// 循环指定次数的计时器
+           /// </summary>
+           /// <param name="interval">每次循环的间隔时间（秒）</param>
+           /// <param name="loopCount">循环次数</param>
+           /// <param name="onTick">每次循环触发的回调（参数：当前循环次数）</param>
+           /// <param name="onComplete">所有循环完成后的回调</param>
+           /// <param name="onUpdate">进度更新回调（0-1）</param>
+           public async UniTask StartLoop(float interval, int loopCount, Action<int> onTick = null, Action onComplete = null, Action<float> onUpdate = null)
+           {
+               if (loopCount <= 0)
+               {
+                   Debug.LogWarning($"循环次数必须大于0，当前值：{loopCount}");
+                   onComplete?.Invoke();
+                   return;
+               }
 
+               _onComplete = onComplete;
+               _onUpdate = onUpdate;
+               IsRunning = true;
+               IsPaused = false;
+
+               _cts = new CancellationTokenSource();
+
+               int currentLoop = 0;
+               float totalProgress = 0;
+               float progressPerLoop = 1f / loopCount;
+
+               try
+               {
+                   while (currentLoop < loopCount && IsRunning)
+                   {
+                       // 单次循环的进度（0-1）
+                       float loopProgress = 0;
+                       float loopElapsedTime = 0;
+
+                       // 单次循环的计时
+                       while (loopProgress < 1f && IsRunning)
+                       {
+                           if (!IsPaused)
+                           {
+                               loopElapsedTime += Time.deltaTime;
+                               loopProgress = Mathf.Clamp01(loopElapsedTime / interval);
+
+                               // 总体进度 = 已完成的循环次数比例 + 当前循环的进度比例
+                               totalProgress = (currentLoop + loopProgress) / loopCount;
+                               _onUpdate?.Invoke(totalProgress);
+                           }
+
+                           await UniTask.Yield(_cts.Token);
+                       }
+
+                       if (IsRunning)
+                       {
+                           // 执行当前循环的回调
+                           currentLoop++;
+                           onTick?.Invoke(currentLoop);
+                           Debug.Log($"循环计时器 {Id} - 第 {currentLoop}/{loopCount} 次触发");
+                       }
+                   }
+
+                   // 所有循环完成
+                   if (IsRunning)
+                   {
+                       _onComplete?.Invoke();
+                   }
+                   IsRunning = false;
+               }
+               catch (OperationCanceledException)
+               {
+                   Debug.Log($"循环计时器 {Id} 被取消，已执行 {currentLoop}/{loopCount} 次");
+               }
+           }
+
+       
+           /// <summary>
+           /// 无限循环计时器，根据条件停止
+           /// </summary>
+           /// <param name="interval">每次循环的间隔时间（秒）</param>
+           /// <param name="onTick">每次循环触发的回调（参数：当前循环次数，返回：是否继续循环）</param>
+           /// <param name="onComplete">停止后的回调</param>
+           /// <param name="onUpdate">进度更新回调（0-1，无限循环时进度循环重置）</param>
+           public async UniTask StartInfiniteLoop(float interval, Func<int, bool> onTick = null, Action onComplete = null, Action<float> onUpdate = null)
+           {
+               _onComplete = onComplete;
+               _onUpdate = onUpdate;
+               IsRunning = true;
+               IsPaused = false;
+
+               _cts = new CancellationTokenSource();
+
+               int currentLoop = 0;
+               bool shouldContinue = true;
+
+               try
+               {
+                   while (IsRunning && shouldContinue)
+                   {
+                       currentLoop++;
+                       float loopProgress = 0;
+                       float loopElapsedTime = 0;
+
+                       // 单次循环的计时
+                       while (loopProgress < 1f && IsRunning && shouldContinue)
+                       {
+                           if (!IsPaused)
+                           {
+                               loopElapsedTime += Time.deltaTime;
+                               loopProgress = Mathf.Clamp01(loopElapsedTime / interval);
+
+                               // 无限循环时，进度在0-1之间循环
+                               _onUpdate?.Invoke(loopProgress);
+                           }
+
+                           await UniTask.Yield(_cts.Token);
+                       }
+
+                       if (IsRunning && shouldContinue)
+                       {
+                           Debug.Log($"无限循环计时器 {Id} - 第 {currentLoop} 次触发");
+
+                           // 执行回调，根据返回值决定是否继续
+                           if (onTick != null)
+                           {
+                               shouldContinue = onTick.Invoke(currentLoop);
+                           }
+                       }
+                   }
+
+                   // 循环停止
+                   if (IsRunning)
+                   {
+                       _onComplete?.Invoke();
+                   }
+                   IsRunning = false;
+               }
+               catch (OperationCanceledException)
+               {
+                   Debug.Log($"无限循环计时器 {Id} 被取消，共执行 {currentLoop} 次");
+               }
+           }
     // 暂停
     public void PauseTimer() => IsPaused = true;
 
